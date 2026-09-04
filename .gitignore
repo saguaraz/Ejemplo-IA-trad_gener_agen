@@ -1,7 +1,6 @@
 # Entorno virtual de Python (evita subir gigabytes de librerías instaladas)
 .venv/
-venv/
-env/
+
 
 # Archivos de configuración de VS Code
 .vscode/
@@ -13,3 +12,4 @@ __pycache__/
 # Archivos de credenciales o variables de entorno
 .env
 *.secret
+

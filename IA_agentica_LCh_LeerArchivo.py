@@ -1,3 +1,4 @@
+import os
 import time
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -32,7 +33,27 @@ def buscar_en_web(consulta: str) -> str:
     except Exception as e:
         return f"Error en la búsqueda: {e}"
 
-tools = [calcular_matematica, buscar_en_web]
+@tool
+def leer_archivo_local(ruta_archivo: str) -> str:
+    """Útil para leer el contenido de un archivo de texto o datos local (.txt, .csv, .json, .md).
+    Entrada: la ruta relativa o absoluta del archivo."""
+    try:
+        if not os.path.exists(ruta_archivo):
+            return f"Error: El archivo en '{ruta_archivo}' no existe."
+        
+        # Límite de seguridad: 100 KB para evitar lecturas masivas que colapsen el contexto
+        tamanio = os.path.getsize(ruta_archivo)
+        if tamanio > 100 * 1024:
+            return f"Error: El archivo es demasiado grande ({tamanio / 1024:.2f} KB). El límite es 100 KB."
+            
+        with open(ruta_archivo, "r", encoding="utf-8", errors="ignore") as f:
+            contenido = f.read()
+            
+        return contenido if contenido.strip() else "El archivo está vacío."
+    except Exception as e:
+        return f"Error al leer el archivo: {e}"
+
+tools = [calcular_matematica, buscar_en_web, leer_archivo_local]
 tools_by_name = {tool.name: tool for tool in tools}
 
 # 2. Inicialización de Gemini 3.6 Flash
@@ -42,19 +63,18 @@ llm = ChatGoogleGenerativeAI(
 )
 llm_with_tools = llm.bind_tools(tools)
 
-# 3. Función de ejecución agéntica con manejo de cuota
-def ejecutar_agente(pregunta_usuario: str, max_iteraciones: int = 3):
+# 3. Función de ejecución agéntica
+def ejecutar_agente(pregunta_usuario: str, max_iteraciones: int = 4):
     print(f"Pregunta: {pregunta_usuario}\n")
     messages = [HumanMessage(content=pregunta_usuario)]
     
     for i in range(max_iteraciones):
-        time.sleep(3)  # Control del ritmo de peticiones
+        time.sleep(3)
         
         exito = False
         intentos = 0
         ai_msg = None
         
-        # Bucle de reintento si salta un error de tasa/cuota temporal
         while not exito and intentos < 3:
             try:
                 ai_msg = llm_with_tools.invoke(messages)
@@ -62,25 +82,22 @@ def ejecutar_agente(pregunta_usuario: str, max_iteraciones: int = 3):
             except Exception as e:
                 intentos += 1
                 if "RESOURCE_EXHAUSTED" in str(e):
-                    print(f"\n[Aviso]: Cuota o frecuencia excedida. Esperando 20 segundos para reintentar (Intento {intentos}/3)...")
+                    print(f"\n[Aviso]: Límite alcanzado. Esperando 20s...")
                     time.sleep(20)
                 else:
                     print(f"\n[Error no recuperable]: {e}")
                     return
 
         if not ai_msg:
-            print("\nNo se pudo obtener respuesta del modelo tras varios reintentos.")
             return
 
         messages.append(ai_msg)
         
-        # Si el modelo responde directamente sin llamar herramientas
         if not ai_msg.tool_calls:
             print("\n--- Respuesta Final ---")
             print(ai_msg.content)
             return
             
-        # Ejecutar herramientas llamadas por el modelo
         for tool_call in ai_msg.tool_calls:
             tool_name = tool_call["name"]
             tool_args = tool_call["args"]
@@ -94,14 +111,8 @@ def ejecutar_agente(pregunta_usuario: str, max_iteraciones: int = 3):
             
             messages.append(ToolMessage(content=str(tool_output), tool_call_id=tool_id))
 
-    print("\n--- Proceso finalizado ---")
-
-
-
 if __name__ == "__main__":
-    print("Iniciando Agente Multi-Herramienta (gemini-3.6-flash)...\n")
+    print("Iniciando Agente Multi-Herramienta con acceso a archivos...\n")
     
-    # Consulta combinada: Web Search + Math
-    pregunta = "¿Cuál es la distancia aproximada de la Tierra a la Luna en kilómetros y cuánto sería esa distancia multiplicada por 2.5?"
-    
-    ejecutar_agente(pregunta)
+    # Prueba: Leer el propio archivo requirements.txt y contar cuántas librerías hay
+    ejecutar_agente("Lee el archivo local 'requirements.txt', dime qué librerías contiene y cuántas son en total.")

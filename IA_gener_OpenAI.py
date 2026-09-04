@@ -1,6 +1,6 @@
 from openai import OpenAI
 
-client = OpenAI(api_key="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")
+client = OpenAI(api_key="")
 
 respuesta = client.chat.completions.create(
     model="gpt-4o-mini",
